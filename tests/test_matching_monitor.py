@@ -8,7 +8,7 @@ from toyoko_watch.matching import (
     match_vacancies,
 )
 from toyoko_watch.models import RequirementSlot, Vacancy, WatchTask
-from toyoko_watch.monitor import AvailabilityState, MonitorService
+from toyoko_watch.monitor import AvailabilityState, MatchEvent, MonitorService
 
 
 @pytest.mark.parametrize(
@@ -75,6 +75,26 @@ def test_exact_names_and_custom_keywords_extend_filters():
 def test_signature_is_stable_regardless_of_vacancy_order():
     items = vacancies()
     assert availability_signature(items) == availability_signature(list(reversed(items)))
+
+
+def test_match_event_round_trip_restores_vacancies():
+    event = MatchEvent(
+        task_id="task",
+        task_name="横滨",
+        slot_id="single",
+        slot_label="单人",
+        hotel_id="00075",
+        hotel_name="横浜1",
+        checkin="2026-11-07",
+        checkout="2026-11-08",
+        occupants=1,
+        vacancies=vacancies()[:1],
+        url="https://booking",
+    )
+
+    restored = MatchEvent.from_dict(event.to_dict())
+
+    assert restored == event
 
 
 def test_first_present_notifies_and_reappearance_notifies_again():

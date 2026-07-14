@@ -74,6 +74,23 @@ class MatchEvent:
         result["vacancies"] = [item.to_dict() for item in self.vacancies]
         return result
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> MatchEvent:
+        """Restore a persisted match event."""
+        return cls(
+            task_id=str(data.get("task_id", "")),
+            task_name=str(data.get("task_name", "")),
+            slot_id=str(data.get("slot_id", "")),
+            slot_label=str(data.get("slot_label", "")),
+            hotel_id=str(data.get("hotel_id", "")),
+            hotel_name=str(data.get("hotel_name", "")),
+            checkin=str(data.get("checkin", "")),
+            checkout=str(data.get("checkout", "")),
+            occupants=int(data.get("occupants", 1)),
+            vacancies=[Vacancy.from_dict(item) for item in data.get("vacancies", [])],
+            url=str(data.get("url", "")),
+        )
+
 
 class MonitorService:
     """Run one task with bounded hotel-request concurrency."""
