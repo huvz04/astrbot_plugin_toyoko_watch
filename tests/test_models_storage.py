@@ -75,9 +75,7 @@ def test_task_rejects_invalid_occupant_count():
     ],
 )
 def test_notification_target_builds_onebot_umo(kind, number, expected):
-    target = NotificationTarget(
-        id="target", label="测试", kind=kind, number=number, enabled=True
-    )
+    target = NotificationTarget(id="target", label="测试", kind=kind, number=number, enabled=True)
 
     assert target.umo == expected
 

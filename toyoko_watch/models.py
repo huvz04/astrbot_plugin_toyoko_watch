@@ -154,15 +154,11 @@ class Vacancy:
         return asdict(self)
 
 
-def validate_task(
-    task: WatchTask, enabled_target_ids: set[str], smtp_ready: bool
-) -> None:
+def validate_task(task: WatchTask, enabled_target_ids: set[str], smtp_ready: bool) -> None:
     """Validate a monitoring task before persistence or execution."""
     if not task.id or not task.name.strip():
         raise ValueError("task id and name are required")
-    if not task.hotel_ids or any(
-        len(item) != 5 or not item.isdigit() for item in task.hotel_ids
-    ):
+    if not task.hotel_ids or any(len(item) != 5 or not item.isdigit() for item in task.hotel_ids):
         raise ValueError("at least one valid hotel id is required")
     try:
         checkin = date.fromisoformat(task.checkin)
