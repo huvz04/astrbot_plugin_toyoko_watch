@@ -217,6 +217,22 @@ def test_snapshot_exposes_editable_data_without_smtp_secret(tmp_path):
     assert "smtp_password" not in snapshot
 
 
+def test_smtp_is_not_ready_without_sender_address(tmp_path):
+    service = make_service(tmp_path)
+    service.config.update(
+        {
+            "smtp_enabled": True,
+            "smtp_host": "smtp.example.com",
+            "smtp_port": 587,
+            "smtp_recipients": ["user@example.com"],
+            "smtp_user": "",
+            "smtp_from": "",
+        }
+    )
+
+    assert service.smtp_ready() is False
+
+
 def test_catalog_refresh_rejects_bad_page_and_preserves_last_good_copy(tmp_path):
     service = make_service(tmp_path)
 

@@ -145,6 +145,7 @@ class ToyokoWatchService:
             and self.config.get("smtp_host")
             and self.config.get("smtp_port")
             and self.config.get("smtp_recipients")
+            and (self.config.get("smtp_from") or self.config.get("smtp_user"))
         )
 
     def search_hotels(self, query: str, limit: int = 100) -> list[dict[str, Any]]:
@@ -257,6 +258,7 @@ class ToyokoWatchService:
     def delete_task(self, task_id: str) -> None:
         """Delete one task and its runtime observations."""
         self.tasks = [item for item in self.tasks if item.id != task_id]
+        self.task_last_checks.pop(task_id, None)
         self.tasks_store.save([item.to_dict() for item in self.tasks])
         prefixes = [key for key in self.availability.values if key.startswith(f"{task_id}:")]
         for key in prefixes:
