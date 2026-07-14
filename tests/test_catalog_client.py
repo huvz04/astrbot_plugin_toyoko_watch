@@ -6,6 +6,7 @@ from toyoko_watch.catalog import parse_hotel_catalog, search_hotels, validate_ca
 from toyoko_watch.client import (
     ToyokoSchemaError,
     build_search_url,
+    collect_room_types,
     collect_vacancies,
     extract_plan_response,
 )
@@ -77,6 +78,18 @@ def test_extract_and_collect_vacancies_from_embedded_next_data():
     assert vacancies[0].smoking == "non_smoking"
     assert vacancies[0].general == 1
     assert vacancies[0].member_price == 6935
+
+
+def test_collect_room_types_includes_zero_inventory_rooms_for_filter_setup():
+    plan = extract_plan_response((FIXTURES / "room_plan.html").read_text(encoding="utf-8"))
+
+    hotel_name, rooms = collect_room_types(plan)
+
+    assert hotel_name == "東横INN横浜スタジアム前1"
+    assert rooms == [
+        {"name": "エコノミーシングル", "smoking": "non_smoking"},
+        {"name": "ツイン", "smoking": "smoking"},
+    ]
 
 
 def test_missing_next_data_is_schema_error_not_empty_inventory():

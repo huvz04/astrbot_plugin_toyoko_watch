@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -29,11 +30,17 @@ SEED = [
 
 class FakeClient:
     def __init__(self):
+        self.calls = []
         self.vacancies = [Vacancy("エコノミーシングル", "non_smoking", "通常", 1, 1, 7410, 6935)]
 
     async def fetch_availability(self, hotel_id, checkin, checkout, occupants, session=None):
+        self.calls.append((hotel_id, occupants))
         values = self.vacancies if occupants == 1 else []
         return "横浜", values, f"https://booking/{hotel_id}/{occupants}"
+
+    async def fetch_room_types(self, hotel_id, checkin, checkout, occupants, session=None):
+        rooms = [{"name": "エコノミーシングル", "smoking": "non_smoking"}]
+        return "横浜", rooms, f"https://booking/{hotel_id}/{occupants}"
 
 
 def target(target_id="private", kind="private", number="12345"):
@@ -175,3 +182,50 @@ async def test_failed_target_retries_without_resending_successful_target(tmp_pat
     assert [umo for umo, _ in calls].count(private_umo) == 1
     assert [umo for umo, _ in calls].count(group_umo) == 2
     assert service.pending_events == {}
+
+
+@pytest.mark.asyncio
+async def test_room_probe_returns_names_even_when_room_has_no_inventory(tmp_path):
+    service = make_service(tmp_path)
+
+    result = await service.probe_rooms(["00075"], "2026-11-07", "2026-11-08", occupants=1)
+
+    assert result[0]["hotel_id"] == "00075"
+    assert result[0]["rooms"][0]["name"] == "エコノミーシングル"
+
+
+def test_snapshot_exposes_editable_data_without_smtp_secret(tmp_path):
+    service = make_service(tmp_path)
+    service.config["smtp_password"] = "secret"
+    service.save_target(target())
+
+    snapshot = service.snapshot()
+
+    assert snapshot["status"]["hotels"] == 2
+    assert snapshot["targets"][0]["umo"] == "aiocqhttp:FriendMessage:12345"
+    assert "smtp_password" not in snapshot
+
+
+def test_catalog_refresh_rejects_bad_page_and_preserves_last_good_copy(tmp_path):
+    service = make_service(tmp_path)
+
+    with pytest.raises(ValueError, match="at least 100"):
+        service.replace_catalog("<html>maintenance</html>")
+
+    assert service.hotels == SEED
+
+
+@pytest.mark.asyncio
+async def test_due_check_respects_each_task_interval(tmp_path):
+    service = make_service(tmp_path)
+    service.save_target(target())
+    service.save_task(enabled_task())
+    now = datetime(2026, 7, 14, 12, 0, tzinfo=timezone.utc)
+
+    first = await service.check_due(now)
+    second = await service.check_due(now + timedelta(seconds=299))
+    third = await service.check_due(now + timedelta(seconds=300))
+
+    assert first["checked_tasks"] == 1
+    assert second["checked_tasks"] == 0
+    assert third["checked_tasks"] == 1

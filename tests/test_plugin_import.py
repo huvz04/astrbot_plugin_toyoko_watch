@@ -9,6 +9,7 @@ def install_astrbot_stubs(monkeypatch, tmp_path: Path):
     api = ModuleType("astrbot.api")
     event = ModuleType("astrbot.api.event")
     star = ModuleType("astrbot.api.star")
+    web = ModuleType("astrbot.api.web")
     core = ModuleType("astrbot.core")
     utils = ModuleType("astrbot.core.utils")
     path_module = ModuleType("astrbot.core.utils.astrbot_path")
@@ -56,6 +57,13 @@ def install_astrbot_stubs(monkeypatch, tmp_path: Path):
     )
     star.Context = object
     star.Star = Star
+    web.request = SimpleNamespace(query={}, json=None)
+    web.json_response = lambda value: value
+    web.error_response = lambda message, status_code=400: {
+        "status": "error",
+        "message": message,
+        "status_code": status_code,
+    }
     path_module.get_astrbot_plugin_data_path = lambda: str(tmp_path)
 
     for name, module in {
@@ -63,6 +71,7 @@ def install_astrbot_stubs(monkeypatch, tmp_path: Path):
         "astrbot.api": api,
         "astrbot.api.event": event,
         "astrbot.api.star": star,
+        "astrbot.api.web": web,
         "astrbot.core": core,
         "astrbot.core.utils": utils,
         "astrbot.core.utils.astrbot_path": path_module,
@@ -74,9 +83,19 @@ def test_plugin_imports_and_builds_service_with_astrbot_api(monkeypatch, tmp_pat
     install_astrbot_stubs(monkeypatch, tmp_path)
     sys.modules.pop("main", None)
     plugin_module = importlib.import_module("main")
-    context = SimpleNamespace(send_message=None, register_web_api=lambda *_: None)
+    routes = []
+    context = SimpleNamespace(
+        send_message=None,
+        register_web_api=lambda *args: routes.append(args),
+    )
 
     plugin = plugin_module.ToyokoWatchPlugin(context, {"enabled": False})
 
     assert plugin.service.status()["hotels"] >= 2
     assert plugin._scheduler_task is None
+    assert {route[0] for route in routes} >= {
+        "/astrbot_plugin_toyoko_watch/status",
+        "/astrbot_plugin_toyoko_watch/tasks",
+        "/astrbot_plugin_toyoko_watch/rooms/probe",
+        "/astrbot_plugin_toyoko_watch/targets/<target_id>/test",
+    }

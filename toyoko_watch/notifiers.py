@@ -15,7 +15,7 @@ from .monitor import MatchEvent
 def format_availability_message(event: MatchEvent) -> str:
     """Format an availability transition for QQ and email."""
     lines = [
-        "🏨 东横INN有符合条件的房间了！",
+        "东横INN有符合条件的房间了！",
         f"任务：{event.task_name}",
         f"需求：{event.slot_label}（{event.occupants}人）",
         f"酒店：{event.hotel_name} ({event.hotel_id})",

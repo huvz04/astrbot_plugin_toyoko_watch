@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .catalog import search_hotels
+import aiohttp
+
+from .catalog import parse_hotel_catalog, search_hotels, validate_catalog
 from .client import ToyokoClient
 from .models import NotificationTarget, WatchTask, validate_task
 from .monitor import AvailabilityState, MatchEvent, MonitorService
@@ -20,6 +22,8 @@ from .notifiers import (
     send_smtp_async,
 )
 from .storage import JsonStore
+
+CATALOG_URL = "https://www.toyoko-inn.com/hotel_list/"
 
 
 def starter_tasks() -> list[dict[str, Any]]:
@@ -103,6 +107,7 @@ class ToyokoWatchService:
                 "delivery": {},
                 "pending_events": {},
                 "last_check": "",
+                "task_last_checks": {},
                 "last_errors": [],
             },
         )
@@ -118,6 +123,7 @@ class ToyokoWatchService:
         self.delivery = DeliveryTracker.from_dict(raw_state.get("delivery", {}))
         self.pending_events: dict[str, dict[str, Any]] = dict(raw_state.get("pending_events", {}))
         self.last_check = str(raw_state.get("last_check", ""))
+        self.task_last_checks: dict[str, str] = dict(raw_state.get("task_last_checks", {}))
         self.last_errors: list[dict[str, str]] = list(raw_state.get("last_errors", []))
         self.client = client or ToyokoClient(timeout=int(config.get("request_timeout", 30)))
         self.monitor = MonitorService(
@@ -141,6 +147,80 @@ class ToyokoWatchService:
     def search_hotels(self, query: str, limit: int = 100) -> list[dict[str, Any]]:
         """Search the last known-good local hotel catalog."""
         return search_hotels(self.hotels, query, limit)
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return editable plugin data without sensitive global configuration."""
+        return {
+            "status": self.status(),
+            "tasks": [item.to_dict() for item in self.tasks],
+            "targets": [item.to_dict() for item in self.targets],
+            "smtp_ready": self.smtp_ready(),
+        }
+
+    async def probe_rooms(
+        self,
+        hotel_ids: list[str],
+        checkin: str,
+        checkout: str,
+        occupants: int,
+    ) -> list[dict[str, Any]]:
+        """Fetch exact room names for filter setup without requiring inventory."""
+        results: list[dict[str, Any]] = []
+        for hotel_id in hotel_ids[:20]:
+            normalized = str(hotel_id).zfill(5)
+            hotel_name, rooms, url = await self.client.fetch_room_types(
+                normalized, checkin, checkout, int(occupants)
+            )
+            results.append(
+                {
+                    "hotel_id": normalized,
+                    "hotel_name": hotel_name,
+                    "rooms": rooms,
+                    "url": url,
+                }
+            )
+        return results
+
+    def replace_catalog(self, html_text: str) -> dict[str, Any]:
+        """Validate and atomically replace the local catalog."""
+        records = parse_hotel_catalog(html_text)
+        validate_catalog(records, self.hotels)
+        self.hotels_store.save(records)
+        self.hotels = records
+        return {"hotels": len(records)}
+
+    async def refresh_catalog(self) -> dict[str, Any]:
+        """Refresh the local hotel catalog from the official hotel list."""
+        timeout = aiohttp.ClientTimeout(total=int(self.config.get("request_timeout", 30)))
+        headers = {"User-Agent": "Mozilla/5.0 ToyokoWatch/0.1"}
+        async with (
+            aiohttp.ClientSession(timeout=timeout, headers=headers) as session,
+            session.get(CATALOG_URL) as response,
+        ):
+            response.raise_for_status()
+            content = await response.text()
+        return self.replace_catalog(content)
+
+    async def test_target(self, target_id: str) -> dict[str, Any]:
+        """Send a proactive test message to one configured QQ target."""
+        target = next((item for item in self.targets if item.id == target_id), None)
+        if target is None:
+            raise KeyError(f"target not found: {target_id}")
+        success = bool(
+            await self.qq_sender(target.umo, "【测试】东横INN空房监控主动消息发送成功。")
+        )
+        return {"success": success, "umo": target.umo}
+
+    async def test_email(self) -> dict[str, bool]:
+        """Send one SMTP test using the current AstrBot plugin configuration."""
+        if not self.smtp_ready():
+            raise ValueError("SMTP configuration is incomplete")
+        await self.smtp_sender(
+            self.config,
+            "东横INN空房监控测试",
+            "东横INN空房监控邮件发送成功。",
+        )
+        return {"success": True}
 
     def save_target(self, data: dict[str, Any]) -> NotificationTarget:
         """Create or replace one reusable QQ destination."""
@@ -222,9 +302,56 @@ class ToyokoWatchService:
                 new_events += 1
         await self._deliver_pending()
         self.last_check = datetime.now(timezone.utc).isoformat()
+        for task in tasks:
+            self.task_last_checks[task.id] = self.last_check
         self.last_errors = errors[-50:]
         self._save_state()
         return {
+            "checked_tasks": len(tasks),
+            "new_events": new_events,
+            "errors": errors,
+            "pending_events": len(self.pending_events),
+            "last_check": self.last_check,
+        }
+
+    async def check_due(self, now: datetime | None = None) -> dict[str, Any]:
+        """Run only enabled tasks whose individual interval has elapsed."""
+        current = now or datetime.now(timezone.utc)
+        due: list[WatchTask] = []
+        for task in self.tasks:
+            if not task.enabled:
+                continue
+            previous = self.task_last_checks.get(task.id)
+            if not previous:
+                due.append(task)
+                continue
+            try:
+                elapsed = (current - datetime.fromisoformat(previous)).total_seconds()
+            except ValueError:
+                elapsed = task.interval_seconds
+            if elapsed >= task.interval_seconds:
+                due.append(task)
+
+        new_events = 0
+        errors: list[dict[str, str]] = []
+        for task in due:
+            events, task_errors = await self.monitor.run_task(task)
+            errors.extend(task_errors)
+            for event in events:
+                event_id = self._event_id(event)
+                self.pending_events[event_id] = {
+                    "event": event.to_dict(),
+                    "target_ids": list(task.target_ids),
+                    "email_enabled": task.email_enabled,
+                }
+                new_events += 1
+            self.task_last_checks[task.id] = current.isoformat()
+        await self._deliver_pending()
+        self.last_check = current.isoformat()
+        self.last_errors = errors[-50:]
+        self._save_state()
+        return {
+            "checked_tasks": len(due),
             "new_events": new_events,
             "errors": errors,
             "pending_events": len(self.pending_events),
@@ -261,7 +388,7 @@ class ToyokoWatchService:
                             False,
                             f"{type(exc).__name__}: {exc}",
                         )
-            if required_ids and all(
+            if not required_ids or all(
                 self.delivery.target_state(event_id, target_id)["success"]
                 for target_id in required_ids
             ):
@@ -279,9 +406,26 @@ class ToyokoWatchService:
             "targets": len(self.targets),
             "hotels": len(self.hotels),
             "last_check": self.last_check,
+            "next_check": self._next_check(),
             "last_errors": self.last_errors,
             "pending_events": len(self.pending_events),
         }
+
+    def _next_check(self) -> str:
+        """Return the earliest per-task due time for status display."""
+        next_values: list[datetime] = []
+        for task in self.tasks:
+            if not task.enabled:
+                continue
+            previous = self.task_last_checks.get(task.id)
+            if not previous:
+                return "due"
+            try:
+                checked = datetime.fromisoformat(previous)
+            except ValueError:
+                return "due"
+            next_values.append(checked + timedelta(seconds=task.interval_seconds))
+        return min(next_values).isoformat() if next_values else ""
 
     def _task(self, task_id: str | None) -> WatchTask:
         task = next((item for item in self.tasks if item.id == task_id), None)
@@ -301,6 +445,7 @@ class ToyokoWatchService:
                 "delivery": self.delivery.to_dict(),
                 "pending_events": self.pending_events,
                 "last_check": self.last_check,
+                "task_last_checks": self.task_last_checks,
                 "last_errors": self.last_errors,
             }
         )

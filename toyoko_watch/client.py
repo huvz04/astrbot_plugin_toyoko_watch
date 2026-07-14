@@ -80,6 +80,23 @@ def collect_vacancies(plan_response: dict) -> tuple[str, list[Vacancy]]:
     return str(plan_response.get("hotelTitle") or ""), vacancies
 
 
+def collect_room_types(plan_response: dict) -> tuple[str, list[dict[str, str]]]:
+    """Return every advertised room type, including zero inventory rooms."""
+    room_types = plan_response.get("roomTypeList") or []
+    if not isinstance(room_types, list):
+        raise ToyokoSchemaError("roomTypeList is not a list")
+    rooms: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for room in room_types:
+        name = str(room.get("roomTypeName") or room.get("roomTypeId") or "").strip()
+        smoking = "smoking" if (room.get("specs") or {}).get("isSmoking") else "non_smoking"
+        key = (name, smoking)
+        if name and key not in seen:
+            rooms.append({"name": name, "smoking": smoking})
+            seen.add(key)
+    return str(plan_response.get("hotelTitle") or ""), rooms
+
+
 class ToyokoClient:
     """Fetch official availability pages with bounded retries."""
 
@@ -96,6 +113,32 @@ class ToyokoClient:
         session: aiohttp.ClientSession | None = None,
     ) -> tuple[str, list[Vacancy], str]:
         """Return hotel name, positive vacancies, and official booking URL."""
+        plan, url = await self._fetch_plan(hotel_id, checkin, checkout, occupants, session)
+        hotel_name, vacancies = collect_vacancies(plan)
+        return hotel_name, vacancies, url
+
+    async def fetch_room_types(
+        self,
+        hotel_id: str,
+        checkin: str,
+        checkout: str,
+        occupants: int,
+        session: aiohttp.ClientSession | None = None,
+    ) -> tuple[str, list[dict[str, str]], str]:
+        """Return room names exposed by the official search page."""
+        plan, url = await self._fetch_plan(hotel_id, checkin, checkout, occupants, session)
+        hotel_name, rooms = collect_room_types(plan)
+        return hotel_name, rooms, url
+
+    async def _fetch_plan(
+        self,
+        hotel_id: str,
+        checkin: str,
+        checkout: str,
+        occupants: int,
+        session: aiohttp.ClientSession | None,
+    ) -> tuple[dict, str]:
+        """Fetch and validate one official plan response."""
         url = build_search_url(hotel_id, checkin, checkout, occupants)
         owns_session = session is None
         if session is None:
@@ -115,9 +158,7 @@ class ToyokoClient:
                     async with session.get(url) as response:
                         response.raise_for_status()
                         page = await response.text()
-                    plan = extract_plan_response(page)
-                    hotel_name, vacancies = collect_vacancies(plan)
-                    return hotel_name, vacancies, url
+                    return extract_plan_response(page), url
                 except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                     last_error = exc
                     if attempt + 1 < self.attempts:
