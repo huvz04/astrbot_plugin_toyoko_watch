@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>东横空房监控</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">TOYOKO WATCH</p>
+          <h1>东横空房监控</h1>
+          <p class="subtitle">把酒店、日期与房型拆成独立需求，命中后主动通知 QQ 或邮箱。</p>
+        </div>
+        <div class="top-actions">
+          <span id="health" class="status-pill">正在连接</span>
+          <button id="reload" class="button secondary" type="button">刷新状态</button>
+        </div>
+      </header>
+
+      <section id="metrics" class="metrics skeleton" aria-label="运行状态"></section>
+      <div id="page-error" class="page-error hidden" role="alert"></div>
+
+      <main class="layout">
+        <section class="primary">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">MONITORING</p>
+              <h2>监控任务</h2>
+            </div>
+            <button id="new-task" class="button primary-button" type="button">新建任务</button>
+          </div>
+          <div id="tasks" class="task-list loading-list" aria-live="polite"></div>
+        </section>
+
+        <aside class="sidebar">
+          <section class="panel">
+            <div class="section-head compact">
+              <div>
+                <p class="section-kicker">DELIVERY</p>
+                <h2>通知目标</h2>
+              </div>
+            </div>
+            <div id="targets" class="target-list"></div>
+            <form id="target-form" class="inline-form">
+              <input id="target-id" type="hidden" />
+              <label>显示名称<input id="target-label" required placeholder="例如：我的私聊" /></label>
+              <div class="two-cols">
+                <label>类型
+                  <select id="target-kind"><option value="private">QQ 私聊</option><option value="group">QQ 群聊</option></select>
+                </label>
+                <label>QQ 号 / 群号<input id="target-number" required inputmode="numeric" pattern="[0-9]+" /></label>
+              </div>
+              <button class="button secondary full" type="submit">保存通知目标</button>
+            </form>
+          </section>
+
+          <section class="panel maintenance">
+            <p class="section-kicker">MAINTENANCE</p>
+            <h2>维护与测试</h2>
+            <p id="catalog-note" class="muted">酒店目录保存在本地，查找不会依赖官网实时响应。</p>
+            <div class="stack-actions">
+              <button id="refresh-catalog" class="button secondary full" type="button">从官网刷新酒店目录</button>
+              <button id="test-email" class="button secondary full" type="button">发送测试邮件</button>
+            </div>
+            <div id="recent-errors" class="recent-errors"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <dialog id="task-dialog" class="dialog">
+      <form id="task-form" method="dialog">
+        <div class="dialog-head">
+          <div><p class="section-kicker">WATCH TASK</p><h2 id="dialog-title">新建监控任务</h2></div>
+          <button id="close-dialog" class="icon-button" type="button" aria-label="关闭">关闭</button>
+        </div>
+        <div class="dialog-body">
+          <input id="task-id" type="hidden" />
+          <section class="form-section">
+            <h3>基本设置</h3>
+            <div class="form-grid">
+              <label class="span-2">任务名称<input id="task-name" required placeholder="例如：横滨周六晚" /></label>
+              <label>入住日期<input id="task-checkin" type="date" required /></label>
+              <label>退房日期<input id="task-checkout" type="date" required /></label>
+              <label>检查间隔（秒）<input id="task-interval" type="number" min="60" max="3600" value="300" required /></label>
+              <label class="switch-line"><input id="task-enabled" type="checkbox" />启用监控</label>
+              <label class="switch-line"><input id="task-notify-changes" type="checkbox" />库存变化时再次通知</label>
+              <label class="switch-line"><input id="task-email" type="checkbox" />同时发送邮件</label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="subsection-head"><h3>酒店</h3><span id="hotel-count" class="count-label">0 家已选</span></div>
+            <div id="selected-hotels" class="chips"></div>
+            <label class="search-field">检索本地酒店目录
+              <input id="hotel-search" placeholder="输入酒店编号、名称、城市或地址" autocomplete="off" />
+            </label>
+            <div id="hotel-results" class="hotel-results"></div>
+          </section>
+
+          <section class="form-section">
+            <div class="subsection-head">
+              <h3>独立房间需求</h3>
+              <div class="head-actions">
+                <button id="probe-rooms" class="button text-button" type="button">探测官网房型</button>
+                <button id="add-slot" class="button text-button" type="button">添加需求</button>
+              </div>
+            </div>
+            <p class="hint">订到其中一个需求后，只把该项标记为“已订到”，其他需求会继续监控。</p>
+            <div id="probe-results" class="probe-results hidden"></div>
+            <div id="slots" class="slots"></div>
+          </section>
+
+          <section class="form-section">
+            <h3>通知去向</h3>
+            <div id="task-targets" class="check-grid"></div>
+            <p class="hint">启用的任务至少需要一个可用 QQ 目标，或已经配置好的邮件。</p>
+          </section>
+        </div>
+        <div class="dialog-actions">
+          <button id="cancel-task" class="button secondary" type="button">取消</button>
+          <button id="save-task" class="button primary-button" type="submit">保存任务</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast hidden" role="status"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
