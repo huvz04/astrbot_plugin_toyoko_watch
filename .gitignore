@@ -1,1 +1,11 @@
 .worktrees/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.log
+state.json
+tasks.json
+targets.json
+hotels.json

@@ -1,0 +1,70 @@
+{
+  "enabled": {
+    "description": "启用后台空房监控",
+    "type": "bool",
+    "default": true
+  },
+  "interval_seconds": {
+    "description": "默认检查间隔（秒）",
+    "type": "int",
+    "default": 300,
+    "hint": "范围 60-3600 秒；每条任务可单独覆盖。"
+  },
+  "max_concurrency": {
+    "description": "官网请求最大并发数",
+    "type": "int",
+    "default": 3,
+    "hint": "建议保持 1-5，避免对官网产生过多并发请求。"
+  },
+  "request_timeout": {
+    "description": "官网请求超时（秒）",
+    "type": "int",
+    "default": 30
+  },
+  "smtp_enabled": {
+    "description": "启用邮件通知",
+    "type": "bool",
+    "default": false
+  },
+  "smtp_host": {
+    "description": "SMTP 主机",
+    "type": "string",
+    "default": "smtp.gmail.com"
+  },
+  "smtp_port": {
+    "description": "SMTP 端口",
+    "type": "int",
+    "default": 587
+  },
+  "smtp_ssl": {
+    "description": "使用隐式 SSL",
+    "type": "bool",
+    "default": false
+  },
+  "smtp_starttls": {
+    "description": "连接后使用 STARTTLS",
+    "type": "bool",
+    "default": true
+  },
+  "smtp_user": {
+    "description": "SMTP 用户名",
+    "type": "string",
+    "default": ""
+  },
+  "smtp_password": {
+    "description": "SMTP 密码或应用专用密码",
+    "type": "string",
+    "default": "",
+    "hint": "仅保存在 AstrBot 插件配置中；日志和状态接口不会输出该值。"
+  },
+  "smtp_from": {
+    "description": "发件人地址",
+    "type": "string",
+    "default": ""
+  },
+  "smtp_recipients": {
+    "description": "收件人列表",
+    "type": "list",
+    "default": []
+  }
+}
