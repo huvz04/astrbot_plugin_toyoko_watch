@@ -26,7 +26,7 @@ from .storage import JsonStore
 CATALOG_URL = "https://www.toyoko-inn.com/hotel_list/"
 
 
-def starter_tasks() -> list[dict[str, Any]]:
+def starter_tasks(interval_seconds: int = 300) -> list[dict[str, Any]]:
     """Return safe paused tasks that preserve the standalone watcher's dates."""
     result = []
     for task_id, name, checkin, checkout in (
@@ -74,7 +74,7 @@ def starter_tasks() -> list[dict[str, Any]]:
                 "target_ids": [],
                 "email_enabled": False,
                 "notify_changes": False,
-                "interval_seconds": 300,
+                "interval_seconds": min(3600, max(60, int(interval_seconds))),
             }
         )
     return result
@@ -98,7 +98,10 @@ class ToyokoWatchService:
         self.qq_sender = qq_sender or self._unavailable_qq_sender
         self.smtp_sender = smtp_sender or send_smtp_async
         self.hotels_store = JsonStore(self.data_dir / "hotels.json", lambda: list(seed_catalog))
-        self.tasks_store = JsonStore(self.data_dir / "tasks.json", starter_tasks)
+        self.tasks_store = JsonStore(
+            self.data_dir / "tasks.json",
+            lambda: starter_tasks(int(config.get("interval_seconds", 300))),
+        )
         self.targets_store = JsonStore(self.data_dir / "targets.json", list)
         self.state_store = JsonStore(
             self.data_dir / "state.json",

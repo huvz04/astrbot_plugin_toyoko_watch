@@ -81,6 +81,17 @@ function renderAll() {
   $("#catalog-note").textContent = `本地目录 ${snapshot.status.hotels} 家酒店。最后检查：${
     snapshot.status.last_check ? new Date(snapshot.status.last_check).toLocaleString() : "尚未检查"
   }`;
+  const errors = snapshot.status.last_errors || [];
+  $("#recent-errors").innerHTML = errors.length
+    ? `<p class="muted">最近检查错误</p>${errors
+        .slice(-5)
+        .map(
+          (item) => `<div class="error-line">${escapeHtml(item.hotel_id || "请求")} · ${escapeHtml(
+            item.error || "未知错误",
+          )}</div>`,
+        )
+        .join("")}`
+    : '<p class="muted">没有最近检查错误。</p>';
 }
 
 function renderMetrics() {

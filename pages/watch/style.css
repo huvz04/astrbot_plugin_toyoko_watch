@@ -105,6 +105,8 @@ label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weig
 input, select { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 0 11px; background: var(--surface); color: var(--text); outline: none; }
 input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .muted, .hint { color: var(--muted); font-size: 12px; }
+.recent-errors { display: grid; gap: 7px; margin-top: 18px; }
+.error-line { padding: 9px; border-left: 2px solid var(--danger); background: var(--danger-soft); color: var(--danger); font-size: 11px; word-break: break-word; }
 .empty { border: 1px dashed var(--line); border-radius: 10px; padding: 28px; color: var(--muted); text-align: center; }
 .page-error { margin: -26px 0 30px; padding: 12px 14px; border: 1px solid var(--danger); background: var(--danger-soft); color: var(--danger); border-radius: 8px; }
 .hidden { display: none !important; }

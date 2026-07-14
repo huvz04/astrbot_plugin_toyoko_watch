@@ -120,6 +120,17 @@ def test_first_start_creates_paused_yokohama_tasks_and_local_catalog(tmp_path):
     assert (tmp_path / "tasks.json").exists()
 
 
+def test_fresh_starter_tasks_use_configured_default_interval(tmp_path):
+    service = ToyokoWatchService(
+        data_dir=tmp_path,
+        seed_catalog=SEED,
+        config={"smtp_enabled": False, "interval_seconds": 600},
+        client=FakeClient(),
+    )
+
+    assert {task.interval_seconds for task in service.tasks} == {600}
+
+
 def test_manual_fulfillment_changes_only_selected_slot(tmp_path):
     service = make_service(tmp_path)
     service.save_target(target())
