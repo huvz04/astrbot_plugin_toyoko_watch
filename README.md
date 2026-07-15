@@ -44,6 +44,14 @@ pip install -r data/plugins/astrbot_plugin_toyoko_watch/requirements.txt
 5. 点击目标旁的“测试”，确认主动消息能够收到。
 6. 点击“立即检查”做一次真实官网检查，确认无错误后再启用任务。
 
+也可以直接在当前 QQ 私聊或群聊中快速创建一个基础任务：
+
+```text
+/toyoko add 00075 1106 1108
+```
+
+这会自动绑定当前会话，监控 `00075` 在最近未来的 11 月 6 日至 11 月 8 日，默认同时查找 1 人单人房和 2 人多人房，并立即执行第一次检查。更细的房型、吸烟和库存条件继续在 WebUI 修改。`add`、`check` 和 `list` 都必须提供 5 位酒店编号。
+
 也可以在 WebUI 手动添加目标：
 
 - 私聊：QQ 号会生成 `aiocqhttp:FriendMessage:<QQ号>`。
@@ -76,7 +84,11 @@ SMTP 密码只保存在 AstrBot 插件配置中，不会写入仓库、状态接
 - `/toyoko status`：查看调度器、任务和最近检查状态。
 - `/toyoko bind`：把当前私聊或群聊添加为通知目标（管理员）。
 - `/toyoko test`：向当前会话发送主动测试消息（管理员）。
-- `/toyoko check`：立即检查全部已启用任务（管理员）。
+- `/toyoko add 00075 1106 1108`：创建基础监控、绑定当前会话并立即检查（管理员）。
+- `/toyoko check 00075`：只检查已启用任务中的指定酒店；5 位酒店编号必填（管理员）。
+- `/toyoko list 00075`：列出指定酒店的任务 ID、需求 ID 和状态。
+- `/toyoko booked <任务ID> <需求ID>`：实际订到后只停止指定需求（管理员）。
+- `/toyoko restore <任务ID> <需求ID>`：恢复指定需求的监控（管理员）。
 - `/toyoko catalog-refresh`：从官网刷新并验证酒店目录（管理员）。
 - `/toyoko help`：查看简要帮助。
 
