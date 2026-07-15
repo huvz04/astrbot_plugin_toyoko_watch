@@ -14,10 +14,12 @@ from astrbot.api.star import Context, Star
 from astrbot.api.web import error_response, json_response, request
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
+from toyoko_watch.quick import parse_quick_stay
 from toyoko_watch.service import ToyokoWatchService
 from toyoko_watch.web import WebService
 
 PLUGIN_NAME = "astrbot_plugin_toyoko_watch"
+HOTEL_ID_REQUIRED = "必须提供 5 位酒店编号，例如 00075。"
 
 
 class ToyokoWatchPlugin(Star):
@@ -179,6 +181,25 @@ class ToyokoWatchPlugin(Star):
         result = await self.context.send_message(umo, MessageChain().message(text))
         return bool(result)
 
+    @staticmethod
+    def _valid_hotel_id(value: str) -> str | None:
+        """Return a valid five-digit hotel ID or None."""
+        return value if len(value) == 5 and value.isdigit() else None
+
+    @staticmethod
+    def _target_from_event(event: AstrMessageEvent) -> dict[str, object]:
+        """Build a reusable QQ target from the current private chat or group."""
+        group_id = str(event.get_group_id() or "")
+        kind = "group" if group_id else "private"
+        number = group_id or str(event.get_sender_id())
+        return {
+            "id": f"{kind}-{number}",
+            "label": f"QQ群 {number}" if kind == "group" else f"QQ私聊 {number}",
+            "kind": kind,
+            "number": number,
+            "enabled": True,
+        }
+
     @filter.on_astrbot_loaded()
     async def on_astrbot_loaded(self):
         """Start the monitor after platform adapters are initialized."""
@@ -242,25 +263,7 @@ class ToyokoWatchPlugin(Star):
     async def toyoko_bind(self, event: AstrMessageEvent):
         """Bind the current private chat or group as a reusable target."""
         event.stop_event()
-        group_id = str(event.get_group_id() or "")
-        if group_id:
-            kind = "group"
-            number = group_id
-            label = f"QQ群 {group_id}"
-        else:
-            kind = "private"
-            number = str(event.get_sender_id())
-            label = f"QQ私聊 {number}"
-        target_id = f"{kind}-{number}"
-        target = self.service.save_target(
-            {
-                "id": target_id,
-                "label": label,
-                "kind": kind,
-                "number": number,
-                "enabled": True,
-            }
-        )
+        target = self.service.save_target(self._target_from_event(event))
         yield event.plain_result(
             f"已绑定通知目标：{target.label}\n{target.umo}\n请在插件 WebUI 的任务中勾选该目标。"
         )
@@ -278,14 +281,119 @@ class ToyokoWatchPlugin(Star):
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @toyoko.command("check")
-    async def toyoko_check(self, event: AstrMessageEvent):
-        """Run all enabled monitoring tasks immediately."""
+    async def toyoko_check(self, event: AstrMessageEvent, hotel_id: str = ""):
+        """Run enabled task views for exactly one required hotel ID."""
         event.stop_event()
-        result = await self.service.check_all()
+        normalized = self._valid_hotel_id(hotel_id)
+        if normalized is None:
+            yield event.plain_result(HOTEL_ID_REQUIRED)
+            return
+        result = await self.service.check_hotel(normalized)
+        if result["checked_tasks"] == 0:
+            yield event.plain_result(
+                f"酒店 {normalized} 没有已启用任务，请使用 /toyoko add "
+                f"{normalized} <入住MMDD> <退房MMDD> 或在 WebUI 配置。"
+            )
+            return
         yield event.plain_result(
-            f"检查完成：新命中 {result['new_events']}，错误 {len(result['errors'])}，"
+            f"酒店 {normalized} 检查完成：任务 {result['checked_tasks']}，"
+            f"新命中 {result['new_events']}，错误 {len(result['errors'])}，"
             f"待投递 {result['pending_events']}。"
         )
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @toyoko.command("add")
+    async def toyoko_add(
+        self,
+        event: AstrMessageEvent,
+        hotel_id: str = "",
+        checkin: str = "",
+        checkout: str = "",
+    ):
+        """Create, bind, and immediately run one broad quick task."""
+        event.stop_event()
+        normalized = self._valid_hotel_id(hotel_id)
+        if normalized is None:
+            yield event.plain_result(HOTEL_ID_REQUIRED)
+            return
+        try:
+            checkin_iso, checkout_iso = parse_quick_stay(checkin, checkout)
+            target = self.service.save_target(self._target_from_event(event))
+            task = self.service.create_quick_task(normalized, checkin_iso, checkout_iso, target.id)
+            result = await self.service.check_all(task.id)
+        except (KeyError, ValueError) as exc:
+            yield event.plain_result(str(exc).strip("'"))
+            return
+        yield event.plain_result(
+            f"快捷任务已创建并检查：{task.id}\n"
+            f"酒店：{normalized}\n日期：{checkin_iso} 至 {checkout_iso}\n"
+            f"新命中 {result['new_events']}，错误 {len(result['errors'])}，"
+            f"待投递 {result['pending_events']}。"
+        )
+
+    @toyoko.command("list")
+    async def toyoko_list(self, event: AstrMessageEvent, hotel_id: str = ""):
+        """List task and requirement IDs for one required hotel ID."""
+        event.stop_event()
+        normalized = self._valid_hotel_id(hotel_id)
+        if normalized is None:
+            yield event.plain_result(HOTEL_ID_REQUIRED)
+            return
+        tasks = self.service.tasks_for_hotel(normalized)
+        if not tasks:
+            yield event.plain_result(f"酒店 {normalized} 还没有监控任务。")
+            return
+        lines = [f"酒店 {normalized} 的监控任务"]
+        for task in tasks:
+            lines.append(
+                f"任务ID：{task.id}｜{'启用' if task.enabled else '停用'}｜"
+                f"{task.checkin} 至 {task.checkout}"
+            )
+            for slot in task.slots:
+                lines.append(f"  需求ID：{slot.id}｜{slot.label}｜{slot.state}")
+        yield event.plain_result("\n".join(lines))
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @toyoko.command("booked")
+    async def toyoko_booked(
+        self,
+        event: AstrMessageEvent,
+        task_id: str = "",
+        slot_id: str = "",
+    ):
+        """Mark exactly one requirement fulfilled after a real reservation."""
+        event.stop_event()
+        if not task_id or not slot_id:
+            yield event.plain_result("用法：/toyoko booked <任务ID> <需求ID>")
+            return
+        try:
+            task = self.service.set_slot_state(task_id, slot_id, "fulfilled")
+            slot = next(item for item in task.slots if item.id == slot_id)
+        except (KeyError, ValueError) as exc:
+            yield event.plain_result(str(exc).strip("'"))
+            return
+        yield event.plain_result(f"已标记为已订到：{task.name} / {slot.label}")
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @toyoko.command("restore")
+    async def toyoko_restore(
+        self,
+        event: AstrMessageEvent,
+        task_id: str = "",
+        slot_id: str = "",
+    ):
+        """Restore exactly one requirement to active monitoring."""
+        event.stop_event()
+        if not task_id or not slot_id:
+            yield event.plain_result("用法：/toyoko restore <任务ID> <需求ID>")
+            return
+        try:
+            task = self.service.set_slot_state(task_id, slot_id, "active")
+            slot = next(item for item in task.slots if item.id == slot_id)
+        except (KeyError, ValueError) as exc:
+            yield event.plain_result(str(exc).strip("'"))
+            return
+        yield event.plain_result(f"已恢复监控：{task.name} / {slot.label}")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @toyoko.command("catalog-refresh")
@@ -304,7 +412,11 @@ class ToyokoWatchPlugin(Star):
             "/toyoko status - 查看状态\n"
             "/toyoko bind - 绑定当前私聊或群聊\n"
             "/toyoko test - 测试当前会话主动消息\n"
-            "/toyoko check - 立即检查全部任务\n"
+            "/toyoko add 00075 1106 1108 - 快速创建并立即检查\n"
+            "/toyoko check 00075 - 立即检查指定酒店（编号必填）\n"
+            "/toyoko list 00075 - 查看任务ID和需求ID\n"
+            "/toyoko booked <任务ID> <需求ID> - 标记已订到\n"
+            "/toyoko restore <任务ID> <需求ID> - 恢复监控\n"
             "/toyoko catalog-refresh - 从官网刷新酒店目录\n"
             "酒店、日期、房型和需求槽位请在插件 WebUI 中配置。"
         )

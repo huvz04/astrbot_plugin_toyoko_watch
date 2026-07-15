@@ -21,6 +21,7 @@ from .notifiers import (
     format_availability_message,
     send_smtp_async,
 )
+from .quick import build_quick_task
 from .storage import JsonStore
 
 CATALOG_URL = "https://www.toyoko-inn.com/hotel_list/"
@@ -151,6 +152,39 @@ class ToyokoWatchService:
     def search_hotels(self, query: str, limit: int = 100) -> list[dict[str, Any]]:
         """Search the last known-good local hotel catalog."""
         return search_hotels(self.hotels, query, limit)
+
+    def tasks_for_hotel(self, hotel_id: str, enabled_only: bool = False) -> list[WatchTask]:
+        """Return tasks containing one hotel, optionally limited to enabled tasks."""
+        normalized = str(hotel_id).zfill(5)
+        return [
+            task
+            for task in self.tasks
+            if normalized in task.hotel_ids and (task.enabled or not enabled_only)
+        ]
+
+    def create_quick_task(
+        self,
+        hotel_id: str,
+        checkin: str,
+        checkout: str,
+        target_id: str,
+    ) -> WatchTask:
+        """Create one deterministic QQ quick task without overwriting existing edits."""
+        normalized = str(hotel_id).zfill(5)
+        hotel = next((item for item in self.hotels if item["hotel_id"] == normalized), None)
+        if hotel is None:
+            raise ValueError(f"unknown hotel: {normalized}")
+        data = build_quick_task(
+            normalized,
+            hotel["name"],
+            checkin,
+            checkout,
+            target_id,
+            int(self.config.get("interval_seconds", 300)),
+        )
+        if any(task.id == data["id"] for task in self.tasks):
+            raise ValueError(f"quick task already exists: {data['id']}")
+        return self.save_task(data)
 
     def snapshot(self) -> dict[str, Any]:
         """Return editable plugin data without sensitive global configuration."""
@@ -290,11 +324,23 @@ class ToyokoWatchService:
     async def check_all(self, task_id: str | None = None) -> dict[str, Any]:
         """Run enabled tasks, add transition events, and retry pending delivery."""
         tasks = [self._task(task_id)] if task_id else [item for item in self.tasks if item.enabled]
+        return await self._run_tasks(tasks)
+
+    async def check_hotel(self, hotel_id: str) -> dict[str, Any]:
+        """Check enabled tasks for exactly one requested hotel."""
+        normalized = str(hotel_id).zfill(5)
+        scoped: list[WatchTask] = []
+        for task in self.tasks_for_hotel(normalized, enabled_only=True):
+            data = task.to_dict()
+            data["hotel_ids"] = [normalized]
+            scoped.append(WatchTask.from_dict(data))
+        return await self._run_tasks(scoped)
+
+    async def _run_tasks(self, tasks: list[WatchTask]) -> dict[str, Any]:
+        """Run a selected task view and persist shared transition state."""
         new_events = 0
         errors: list[dict[str, str]] = []
         for task in tasks:
-            if not task.enabled and task_id is None:
-                continue
             events, task_errors = await self.monitor.run_task(task)
             errors.extend(task_errors)
             for event in events:
