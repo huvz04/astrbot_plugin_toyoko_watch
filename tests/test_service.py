@@ -131,6 +131,31 @@ def test_fresh_starter_tasks_use_configured_default_interval(tmp_path):
     assert {task.interval_seconds for task in service.tasks} == {600}
 
 
+def test_tasks_for_hotel_can_include_disabled_tasks(tmp_path):
+    service = make_service(tmp_path)
+
+    assert len(service.tasks_for_hotel("00075")) == 2
+    assert service.tasks_for_hotel("00075", enabled_only=True) == []
+
+
+def test_create_quick_task_rejects_unknown_hotel_and_duplicate(tmp_path):
+    service = make_service(tmp_path)
+    service.save_target(target())
+
+    with pytest.raises(ValueError, match="unknown hotel"):
+        service.create_quick_task("99999", "2026-11-06", "2026-11-08", "private")
+
+    created = service.create_quick_task("00075", "2026-11-06", "2026-11-08", "private")
+    assert created.hotel_ids == ["00075"]
+    assert [(slot.id, slot.occupants) for slot in created.slots] == [
+        ("single", 1),
+        ("multi", 2),
+    ]
+
+    with pytest.raises(ValueError, match="already exists"):
+        service.create_quick_task("00075", "2026-11-06", "2026-11-08", "private")
+
+
 def test_manual_fulfillment_changes_only_selected_slot(tmp_path):
     service = make_service(tmp_path)
     service.save_target(target())
@@ -256,3 +281,28 @@ async def test_due_check_respects_each_task_interval(tmp_path):
     assert first["checked_tasks"] == 1
     assert second["checked_tasks"] == 0
     assert third["checked_tasks"] == 1
+
+
+@pytest.mark.asyncio
+async def test_check_hotel_fetches_only_requested_hotel(tmp_path):
+    service = make_service(tmp_path)
+    service.save_target(target())
+    data = enabled_task()
+    data["hotel_ids"] = ["00075", "00073"]
+    service.save_task(data)
+    service.client.calls.clear()
+
+    result = await service.check_hotel("00075")
+
+    assert result["checked_tasks"] == 1
+    assert {hotel_id for hotel_id, _occupants in service.client.calls} == {"00075"}
+
+
+@pytest.mark.asyncio
+async def test_check_hotel_skips_disabled_and_unrelated_tasks(tmp_path):
+    service = make_service(tmp_path)
+
+    result = await service.check_hotel("00075")
+
+    assert result["checked_tasks"] == 0
+    assert service.client.calls == []
