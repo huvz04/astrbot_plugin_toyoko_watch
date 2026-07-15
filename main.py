@@ -14,9 +14,9 @@ from astrbot.api.star import Context, Star
 from astrbot.api.web import error_response, json_response, request
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
-from toyoko_watch.quick import parse_quick_stay
-from toyoko_watch.service import ToyokoWatchService
-from toyoko_watch.web import WebService
+from .toyoko_watch.quick import parse_quick_stay
+from .toyoko_watch.service import ToyokoWatchService
+from .toyoko_watch.web import WebService
 
 PLUGIN_NAME = "astrbot_plugin_toyoko_watch"
 HOTEL_ID_REQUIRED = "必须提供 5 位酒店编号，例如 00075。"

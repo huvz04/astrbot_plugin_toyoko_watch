@@ -1,4 +1,4 @@
-import importlib
+import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -82,6 +82,44 @@ def install_astrbot_stubs(monkeypatch, tmp_path: Path):
         monkeypatch.setitem(sys.modules, name, module)
 
 
+def import_as_astrbot_plugin(monkeypatch):
+    """Load main.py using the package path used by AstrBot's plugin manager."""
+    plugin_root = Path(__file__).resolve().parents[1]
+    package_name = "data.plugins.astrbot_plugin_toyoko_watch"
+
+    for name in list(sys.modules):
+        if (
+            name == "toyoko_watch"
+            or name.startswith("toyoko_watch.")
+            or name == package_name
+            or name.startswith(f"{package_name}.")
+        ):
+            monkeypatch.delitem(sys.modules, name, raising=False)
+
+    for name, path in {
+        "data": plugin_root.parent,
+        "data.plugins": plugin_root.parent,
+        package_name: plugin_root,
+    }.items():
+        package = ModuleType(name)
+        package.__path__ = [str(path)]
+        package.__package__ = name
+        monkeypatch.setitem(sys.modules, name, package)
+
+    monkeypatch.setattr(
+        sys,
+        "path",
+        [entry for entry in sys.path if Path(entry or ".").resolve() != plugin_root.resolve()],
+    )
+    module_name = f"{package_name}.main"
+    spec = importlib.util.spec_from_file_location(module_name, plugin_root / "main.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, module_name, module)
+    spec.loader.exec_module(module)
+    return module
+
+
 class FakeEvent:
     def __init__(self, group_id="", sender_id="12345"):
         self.group_id = group_id
@@ -108,8 +146,7 @@ async def collect(generator):
 @pytest.fixture
 def plugin(monkeypatch, tmp_path):
     install_astrbot_stubs(monkeypatch, tmp_path)
-    sys.modules.pop("main", None)
-    plugin_module = importlib.import_module("main")
+    plugin_module = import_as_astrbot_plugin(monkeypatch)
     context = SimpleNamespace(
         send_message=AsyncMock(return_value=True),
         register_web_api=lambda *_args: None,
@@ -119,8 +156,7 @@ def plugin(monkeypatch, tmp_path):
 
 def test_plugin_imports_and_builds_service_with_astrbot_api(monkeypatch, tmp_path):
     install_astrbot_stubs(monkeypatch, tmp_path)
-    sys.modules.pop("main", None)
-    plugin_module = importlib.import_module("main")
+    plugin_module = import_as_astrbot_plugin(monkeypatch)
     routes = []
     context = SimpleNamespace(
         send_message=None,
@@ -137,6 +173,16 @@ def test_plugin_imports_and_builds_service_with_astrbot_api(monkeypatch, tmp_pat
         "/astrbot_plugin_toyoko_watch/rooms/probe",
         "/astrbot_plugin_toyoko_watch/targets/<target_id>/test",
     }
+
+
+def test_plugin_imports_from_astrbot_package_path(monkeypatch, tmp_path):
+    install_astrbot_stubs(monkeypatch, tmp_path)
+
+    plugin_module = import_as_astrbot_plugin(monkeypatch)
+
+    assert plugin_module.ToyokoWatchPlugin.__module__ == (
+        "data.plugins.astrbot_plugin_toyoko_watch.main"
+    )
 
 
 @pytest.mark.asyncio
@@ -164,8 +210,9 @@ async def test_booked_and_restore_change_exact_slot(plugin):
 @pytest.mark.asyncio
 async def test_add_binds_current_group_and_runs_immediately(plugin, monkeypatch):
     event = FakeEvent(group_id="67890")
+    plugin_module = sys.modules[plugin.__class__.__module__]
     monkeypatch.setattr(
-        sys.modules["main"],
+        plugin_module,
         "parse_quick_stay",
         lambda _start, _end: ("2026-11-06", "2026-11-08"),
     )
