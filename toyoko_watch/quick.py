@@ -7,13 +7,28 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 
-def _calendar_date(value: str, year: int) -> date:
+def _month_day(value: str) -> tuple[int, int]:
     if len(value) != 4 or not value.isdigit():
         raise ValueError("日期必须使用 MMDD，例如 1106")
+    month = int(value[:2])
+    day = int(value[2:])
     try:
-        return date(year, int(value[:2]), int(value[2:]))
+        date(2000, month, day)
     except ValueError as exc:
         raise ValueError(f"无效日期：{value}") from exc
+    return month, day
+
+
+def _next_occurrence(value: str, after: date, inclusive: bool) -> date:
+    month, day = _month_day(value)
+    for year in range(after.year, after.year + 9):
+        try:
+            candidate = date(year, month, day)
+        except ValueError:
+            continue
+        if candidate > after or (inclusive and candidate == after):
+            return candidate
+    raise ValueError(f"找不到可用日期：{value}")
 
 
 def parse_quick_stay(
@@ -23,12 +38,8 @@ def parse_quick_stay(
 ) -> tuple[str, str]:
     """Resolve an MMDD pair to the nearest valid future stay in Shanghai time."""
     current = today or datetime.now(ZoneInfo("Asia/Shanghai")).date()
-    checkin = _calendar_date(checkin_mmdd, current.year)
-    if checkin < current:
-        checkin = _calendar_date(checkin_mmdd, current.year + 1)
-    checkout = _calendar_date(checkout_mmdd, checkin.year)
-    if checkout <= checkin:
-        checkout = _calendar_date(checkout_mmdd, checkin.year + 1)
+    checkin = _next_occurrence(checkin_mmdd, current, inclusive=True)
+    checkout = _next_occurrence(checkout_mmdd, checkin, inclusive=False)
     nights = (checkout - checkin).days
     if not 1 <= nights <= 30:
         raise ValueError("入住到退房必须相隔 1 至 30 晚")

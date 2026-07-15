@@ -26,6 +26,13 @@ def test_quick_dates_support_cross_year_checkout():
     )
 
 
+def test_quick_dates_resolve_leap_day_to_next_valid_year():
+    assert parse_quick_stay("0229", "0301", date(2026, 7, 15)) == (
+        "2028-02-29",
+        "2028-03-01",
+    )
+
+
 @pytest.mark.parametrize(
     ("start", "end"),
     [("1131", "1201"), ("1106", "1106"), ("1106", "1207"), ("116", "1108")],
