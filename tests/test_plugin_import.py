@@ -226,6 +226,25 @@ def test_resolver_does_not_guess_between_multiple_onebot_instances(plugin):
 
 
 @pytest.mark.asyncio
+async def test_page_save_target_resolves_blank_platform_id(plugin):
+    plugin_module = sys.modules[plugin.__class__.__module__]
+    plugin_module.request.json = AsyncMock(
+        return_value={
+            "id": "private-1686448912",
+            "label": "自己",
+            "kind": "private",
+            "number": "1686448912",
+            "platform_id": "",
+            "enabled": True,
+        }
+    )
+
+    result = await plugin.page_save_target()
+
+    assert result["umo"] == "default-qq:FriendMessage:1686448912"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("command", ["toyoko_check", "toyoko_add", "toyoko_list"])
 async def test_hotel_commands_require_five_digit_id(plugin, command):
     replies = await collect(getattr(plugin, command)(FakeEvent(), ""))

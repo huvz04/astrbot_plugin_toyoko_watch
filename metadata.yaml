@@ -2,7 +2,7 @@ name: astrbot_plugin_toyoko_watch
 display_name: 东横INN空房监控
 description: 可视化配置东横INN酒店、日期和房型，并通过 OneBot v11 QQ 与邮件主动通知。
 short_desc: 东横INN全酒店空房监控与QQ主动提醒
-version: 0.1.1
+version: 0.1.2
 author: dache
 repo: https://github.com/huvz04/astrbot_plugin_toyoko_watch
 support_platforms:

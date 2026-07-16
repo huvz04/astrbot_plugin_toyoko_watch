@@ -151,6 +151,8 @@ class ToyokoWatchPlugin(Star):
         """Create or replace one QQ notification target."""
         try:
             payload = await request.json(default={})
+            platform_id = str(payload.get("platform_id") or "aiocqhttp")
+            payload["platform_id"] = self._resolve_platform_id(platform_id)
             return json_response(self.web.save_target(payload))
         except Exception as exc:
             return self._page_error(exc)

@@ -463,7 +463,7 @@ $("#target-form").addEventListener("submit", async (event) => {
   const number = $("#target-number").value.trim();
   const payload = {
     id: $("#target-id").value || `${kind}-${number}`, label: $("#target-label").value.trim(),
-    kind, number, enabled: true,
+    kind, number, platform_id: $("#target-platform-id").value.trim(), enabled: true,
   };
   try {
     await bridge.apiPost("targets", payload);
