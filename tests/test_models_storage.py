@@ -82,8 +82,12 @@ def test_notification_target_builds_onebot_umo(kind, number, expected):
 
 def test_notification_target_uses_platform_instance_id():
     target = NotificationTarget(
-        id="private", label="自己", kind="private", number="1686448912",
-        enabled=True, platform_id="default-qq",
+        id="private",
+        label="自己",
+        kind="private",
+        number="1686448912",
+        enabled=True,
+        platform_id="default-qq",
     )
     assert target.umo == "default-qq:FriendMessage:1686448912"
     assert target.to_dict()["platform_id"] == "default-qq"
@@ -100,7 +104,10 @@ def test_notification_target_loads_legacy_record_without_platform_id():
 @pytest.mark.parametrize("platform_id", ["", "bad:id"])
 def test_notification_target_rejects_invalid_platform_id(platform_id):
     target = NotificationTarget(
-        id="private", label="自己", kind="private", number="1686448912",
+        id="private",
+        label="自己",
+        kind="private",
+        number="1686448912",
         platform_id=platform_id,
     )
     with pytest.raises(ValueError, match="platform_id"):

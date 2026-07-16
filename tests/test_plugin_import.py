@@ -205,23 +205,17 @@ def test_plugin_imports_from_astrbot_package_path(monkeypatch, tmp_path):
 async def test_send_qq_resolves_legacy_adapter_name_to_unique_instance(plugin):
     await plugin._send_qq("aiocqhttp:FriendMessage:1686448912", "test")
     plugin.context.send_message.assert_awaited_once()
-    assert plugin.context.send_message.await_args.args[0] == (
-        "default-qq:FriendMessage:1686448912"
-    )
+    assert plugin.context.send_message.await_args.args[0] == ("default-qq:FriendMessage:1686448912")
 
 
 @pytest.mark.asyncio
 async def test_send_qq_preserves_exact_platform_instance(plugin):
     await plugin._send_qq("default-qq:GroupMessage:378075060", "test")
-    assert plugin.context.send_message.await_args.args[0] == (
-        "default-qq:GroupMessage:378075060"
-    )
+    assert plugin.context.send_message.await_args.args[0] == ("default-qq:GroupMessage:378075060")
 
 
 def test_resolver_does_not_guess_between_multiple_onebot_instances(plugin):
-    plugin.context.platform_manager.platform_insts.append(
-        FakePlatform("backup-qq", "aiocqhttp")
-    )
+    plugin.context.platform_manager.platform_insts.append(FakePlatform("backup-qq", "aiocqhttp"))
     assert plugin._resolve_platform_id("aiocqhttp") == "aiocqhttp"
 
 

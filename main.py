@@ -183,8 +183,10 @@ class ToyokoWatchPlugin(Star):
         if manager is None:
             return []
         get_insts = getattr(manager, "get_insts", None)
-        return list(get_insts()) if callable(get_insts) else list(
-            getattr(manager, "platform_insts", [])
+        return (
+            list(get_insts())
+            if callable(get_insts)
+            else list(getattr(manager, "platform_insts", []))
         )
 
     def _resolve_platform_id(self, platform_id: str) -> str:
