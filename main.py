@@ -176,9 +176,32 @@ class ToyokoWatchPlugin(Star):
         except Exception as exc:
             return self._page_error(exc)
 
+    def _platform_instances(self) -> list[object]:
+        manager = getattr(self.context, "platform_manager", None)
+        if manager is None:
+            return []
+        get_insts = getattr(manager, "get_insts", None)
+        return list(get_insts()) if callable(get_insts) else list(
+            getattr(manager, "platform_insts", [])
+        )
+
+    def _resolve_platform_id(self, platform_id: str) -> str:
+        metadata = [platform.meta() for platform in self._platform_instances()]
+        if any(item.id == platform_id for item in metadata):
+            return platform_id
+        matches = [item.id for item in metadata if item.name == platform_id]
+        return matches[0] if len(matches) == 1 else platform_id
+
+    def _resolve_umo(self, umo: str) -> str:
+        platform_id, message_type, session_id = umo.split(":", 2)
+        resolved = self._resolve_platform_id(platform_id)
+        return f"{resolved}:{message_type}:{session_id}"
+
     async def _send_qq(self, umo: str, text: str) -> bool:
         """Send a plain proactive message through AstrBot."""
-        result = await self.context.send_message(umo, MessageChain().message(text))
+        result = await self.context.send_message(
+            self._resolve_umo(umo), MessageChain().message(text)
+        )
         return bool(result)
 
     @staticmethod
@@ -192,12 +215,14 @@ class ToyokoWatchPlugin(Star):
         group_id = str(event.get_group_id() or "")
         kind = "group" if group_id else "private"
         number = group_id or str(event.get_sender_id())
+        platform_id = event.unified_msg_origin.split(":", 1)[0]
         return {
             "id": f"{kind}-{number}",
             "label": f"QQ群 {number}" if kind == "group" else f"QQ私聊 {number}",
             "kind": kind,
             "number": number,
             "enabled": True,
+            "platform_id": platform_id,
         }
 
     @filter.on_astrbot_loaded()

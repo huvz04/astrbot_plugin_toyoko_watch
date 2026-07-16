@@ -120,10 +120,21 @@ def import_as_astrbot_plugin(monkeypatch):
     return module
 
 
+class FakePlatform:
+    def __init__(self, platform_id="default-qq", name="aiocqhttp"):
+        self.metadata = SimpleNamespace(id=platform_id, name=name)
+
+    def meta(self):
+        return self.metadata
+
+
 class FakeEvent:
-    def __init__(self, group_id="", sender_id="12345"):
+    def __init__(self, group_id="", sender_id="12345", platform_id="default-qq"):
         self.group_id = group_id
         self.sender_id = sender_id
+        message_type = "GroupMessage" if group_id else "FriendMessage"
+        session_id = group_id or sender_id
+        self.unified_msg_origin = f"{platform_id}:{message_type}:{session_id}"
         self.stopped = False
 
     def stop_event(self):
@@ -147,9 +158,14 @@ async def collect(generator):
 def plugin(monkeypatch, tmp_path):
     install_astrbot_stubs(monkeypatch, tmp_path)
     plugin_module = import_as_astrbot_plugin(monkeypatch)
+    platforms = [FakePlatform()]
     context = SimpleNamespace(
         send_message=AsyncMock(return_value=True),
         register_web_api=lambda *_args: None,
+        platform_manager=SimpleNamespace(
+            platform_insts=platforms,
+            get_insts=lambda: platforms,
+        ),
     )
     return plugin_module.ToyokoWatchPlugin(context, {"enabled": False})
 
@@ -183,6 +199,30 @@ def test_plugin_imports_from_astrbot_package_path(monkeypatch, tmp_path):
     assert plugin_module.ToyokoWatchPlugin.__module__ == (
         "data.plugins.astrbot_plugin_toyoko_watch.main"
     )
+
+
+@pytest.mark.asyncio
+async def test_send_qq_resolves_legacy_adapter_name_to_unique_instance(plugin):
+    await plugin._send_qq("aiocqhttp:FriendMessage:1686448912", "test")
+    plugin.context.send_message.assert_awaited_once()
+    assert plugin.context.send_message.await_args.args[0] == (
+        "default-qq:FriendMessage:1686448912"
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_qq_preserves_exact_platform_instance(plugin):
+    await plugin._send_qq("default-qq:GroupMessage:378075060", "test")
+    assert plugin.context.send_message.await_args.args[0] == (
+        "default-qq:GroupMessage:378075060"
+    )
+
+
+def test_resolver_does_not_guess_between_multiple_onebot_instances(plugin):
+    plugin.context.platform_manager.platform_insts.append(
+        FakePlatform("backup-qq", "aiocqhttp")
+    )
+    assert plugin._resolve_platform_id("aiocqhttp") == "aiocqhttp"
 
 
 @pytest.mark.asyncio
@@ -226,7 +266,7 @@ async def test_add_binds_current_group_and_runs_immediately(plugin, monkeypatch)
 
     assert "00075" in replies[0]
     assert "2026-11-06" in replies[0]
-    assert plugin.service.targets[-1].umo == "aiocqhttp:GroupMessage:67890"
+    assert plugin.service.targets[-1].umo == "default-qq:GroupMessage:67890"
     plugin.service.check_all.assert_awaited_once_with(task.id)
 
 
