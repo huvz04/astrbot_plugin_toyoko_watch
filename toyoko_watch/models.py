@@ -92,6 +92,7 @@ class NotificationTarget:
     kind: str
     number: str
     enabled: bool = True
+    platform_id: str = "aiocqhttp"
 
     @property
     def umo(self) -> str:
@@ -104,7 +105,9 @@ class NotificationTarget:
             raise ValueError("target kind must be private or group")
         if not self.number.isdigit():
             raise ValueError("target number must contain digits only")
-        return f"aiocqhttp:{message_type}:{self.number}"
+        if not self.platform_id or ":" in self.platform_id:
+            raise ValueError("target platform_id must be a non-empty AstrBot platform ID")
+        return f"{self.platform_id}:{message_type}:{self.number}"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> NotificationTarget:
@@ -115,6 +118,7 @@ class NotificationTarget:
             kind=str(data.get("kind", "private")),
             number=str(data.get("number", "")),
             enabled=bool(data.get("enabled", True)),
+            platform_id=str(data.get("platform_id") or "aiocqhttp"),
         )
 
     def to_dict(self) -> dict[str, Any]:

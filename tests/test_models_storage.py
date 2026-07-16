@@ -80,6 +80,33 @@ def test_notification_target_builds_onebot_umo(kind, number, expected):
     assert target.umo == expected
 
 
+def test_notification_target_uses_platform_instance_id():
+    target = NotificationTarget(
+        id="private", label="自己", kind="private", number="1686448912",
+        enabled=True, platform_id="default-qq",
+    )
+    assert target.umo == "default-qq:FriendMessage:1686448912"
+    assert target.to_dict()["platform_id"] == "default-qq"
+
+
+def test_notification_target_loads_legacy_record_without_platform_id():
+    target = NotificationTarget.from_dict(
+        {"id": "group", "label": "群", "kind": "group", "number": "378075060"}
+    )
+    assert target.platform_id == "aiocqhttp"
+    assert target.umo == "aiocqhttp:GroupMessage:378075060"
+
+
+@pytest.mark.parametrize("platform_id", ["", "bad:id"])
+def test_notification_target_rejects_invalid_platform_id(platform_id):
+    target = NotificationTarget(
+        id="private", label="自己", kind="private", number="1686448912",
+        platform_id=platform_id,
+    )
+    with pytest.raises(ValueError, match="platform_id"):
+        _ = target.umo
+
+
 def test_json_store_round_trip_uses_atomic_replace(tmp_path: Path):
     store = JsonStore(tmp_path / "tasks.json", default_factory=list)
 
